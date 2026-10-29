@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>Arbitrage Scanner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/ccxt/4.5.90/ccxt.browser.min.js"
+    integrity="sha512-SDXT2RIoe/tiXvXYPfmrMZbRQTJBd2oUzuoySkUFJaRTMiZrZet+V4ZYM14BIWgtX4krI5GG938EiVzE/5HH4g=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"></script>
+  <style>
+    html { scrollbar-color: #334155 #0f172a; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; border: 2px solid #0f172a; }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(148, 163, 184, 0.25);
+      border-top-color: #818cf8;
+      border-radius: 9999px;
+      animation: spin 0.7s linear infinite;
+      vertical-align: -2px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    th[data-sort] { user-select: none; }
+    .sort-ind { display: inline-block; width: 12px; color: #818cf8; }
+    .tabular { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-200 antialiased">
+  <div class="mx-auto max-w-[1500px] space-y-5 px-4 py-6 sm:px-6 lg:px-8">
+
+    <header class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div>
+        <h1 class="flex items-center gap-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+          <span class="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-indigo-300">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+              <path d="M3 17l6-6 4 4 8-8"></path>
+              <path d="M14 7h7v7"></path>
+            </svg>
+          </span>
+          Arbitrage Scanner
+        </h1>
+        <p class="mt-1 text-sm text-slate-400">Cross-exchange spreads for crypto, forex and tokenized stocks. Everything runs in your browser via CCXT.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400">
+          <span>Auto refresh</span>
+          <select id="autoRefresh" class="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200 outline-none focus:border-indigo-500">
+            <option value="0">Off</option>
+            <option value="15">15s</option>
+            <option value="30">30s</option>
+            <option value="60">60s</option>
+            <option value="120">2m</option>
+          </select>
+        </label>
+        <button id="scanBtn" type="button" class="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60">
+          <span id="scanBtnSpinner" class="spinner hidden"></span>
+          <span id="scanBtnLabel">Scan markets</span>
+        </button>
+      </div>
+    </header>
+
+    <div id="fatal" class="hidden rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>
+
+    <section id="controls" class="space-y-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-xl shadow-black/20 sm:p-5">
+      <div class="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <div class="space-y-4">
+          <div>
+            <div class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Asset class</div>
+            <div class="flex flex-wrap gap-2">
+              <label class="cursor-pointer select-none">
+                <input type="checkbox" name="assetClass" value="crypto" class="peer sr-only" checked>
+                <span class="inline-flex items-center rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-600 peer-checked:border-indigo-500/60 peer-checked:bg-indigo-500/10 peer-checked:text-indigo-300">Crypto</span>
+              </label>
+              <label class="cursor-pointer select-none">
+                <input type="checkbox" name="assetClass" value="forex" class="peer sr-only">
+                <span class="inline-flex items-center rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-600 peer-checked:border-teal-500/60 peer-checked:bg-teal-500/10 peer-checked:text-teal-300">Forex</span>
+              </label>
+              <label class="cursor-pointer select-none">
+                <input type="checkbox" name="assetClass" value="stocks" class="peer sr-only">
+                <span class="inline-flex items-center rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-600 peer-checked:border-amber-500/60 peer-checked:bg-amber-500/10 peer-checked:text-amber-300">Stocks</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Exchanges <span id="exchangeCount" class="ml-1 font-normal normal-case tracking-normal text-slate-600">0/0</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button id="selectAllExchanges" type="button" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200">All</button>
+                <button id="selectNoExchanges" type="button" class="rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-400 transition hover:border-slate-600 hover:text-slate-200">None</button>
+              </div>
+            </div>
+            <div id="exchangeList" class="flex max-h-40 flex-wrap gap-2 overflow-y-auto pr-1"></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div>
+            <label for="minSpread" class="mb-1 block text-xs font-medium text-slate-400">Min spread %</label>
+            <input id="minSpread" type="number" value="0.5" min="0" max="1000" step="0.1" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+          </div>
+          <div>
+            <label for="maxSpread" class="mb-1 block text-xs font-medium text-slate-400">Max spread %</label>
+            <input id="maxSpread" type="number" value="25" min="0" max="100000" step="1" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+          </div>
+          <div>
+            <label for="fallbackFee" class="mb-1 block text-xs font-medium text-slate-400">Default taker fee %</label>
+            <input id="fallbackFee" type="number" value="0.1" min="0" max="5" step="0.01" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+          </div>
+          <div>
+            <label for="minVolume" class="mb-1 block text-xs font-medium text-slate-400">Min 24h quote volume</label>
+            <input id="minVolume" type="number" value="0" min="0" step="1000" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+          </div>
+          <div class="flex flex-col justify-end">
+            <label for="applyFees" class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300">
+              <input id="applyFees" type="checkbox" checked class="h-4 w-4 rounded accent-emerald-500">
+              <span>Apply fees</span>
+            </label>
+          </div>
+          <div class="col-span-2 sm:col-span-3">
+            <label for="search" class="mb-1 block text-xs font-medium text-slate-400">Search symbols or exchanges</label>
+            <input id="search" type="search" placeholder="e.g. BTC, ETH/USDT, Kraken" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-800 pt-3 text-[11px] text-slate-500">
+        <span>Fees are read per market when available, otherwise the default taker fee is used.</span>
+        <span>Spreads above the max are treated as stale quotes or mismatched symbols and hidden.</span>
+        <span>Forex needs fiat/fiat pairs (e.g. Kraken EUR/USD). Stocks need tokenized stock markets, and both sides must list the same symbol.</span>
+        <span class="text-slate-600">Some venues block browser CORS; failures are reported in the connection panel.</span>
+      </div>
+    </section>
+
+    <section class="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+        <div class="text-[11px] font-medium uppercase tracking-wider text-slate-500">Matches</div>
+        <div id="statMatches" class="tabular mt-1 text-xl font-semibold text-white">0</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+        <div class="text-[11px] font-medium uppercase tracking-wider text-slate-500">Arbitrage symbols</div>
+        <div id="statSymbols" class="tabular mt-1 text-xl font-semibold text-white">0</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+        <div class="text-[11px] font-medium uppercase tracking-wider text-slate-500">Quotes loaded</div>
+        <div id="statQuotes" class="tabular mt-1 text-xl font-semibold text-white">0</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+        <div class="text-[11px] font-medium uppercase tracking-wider text-slate-500">Last scan</div>
+        <div id="statUpdated" class="tabular mt-1 text-xl font-semibold text-white">—</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Connection status</div>
+      <div id="exchangeStatus" class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"></div>
+    </section>
+
+    <section class="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 shadow-xl shadow-black/20">
+      <div class="overflow-x-auto">
+        <div class="max-h-[60vh] overflow-y-auto">
+          <table class="tabular min-w-full text-sm">
+            <thead class="sticky top-0 z-10 bg-slate-900 text-[11px] uppercase tracking-wider text-slate-500">
+              <tr class="border-b border-slate-800">
+                <th data-sort="symbol" class="px-3 py-2.5 text-left font-semibold">Symbol <span class="sort-ind"></span></th>
+                <th class="px-3 py-2.5 text-left font-semibold">Class</th>
+                <th data-sort="buy" class="px-3 py-2.5 text-left font-semibold">Buy exchange <span class="sort-ind"></span></th>
+                <th data-sort="buyPrice" class="px-3 py-2.5 text-right font-semibold">Buy price <span class="sort-ind"></span></th>
+                <th data-sort="sell" class="px-3 py-2.5 text-left font-semibold">Sell exchange <span class="sort-ind"></span></th>
+                <th data-sort="sellPrice" class="px-3 py-2.5 text-right font-semibold">Sell price <span class="sort-ind"></span></th>
+                <th data-sort="spreadPct" class="px-3 py-2.5 text-right font-semibold">Spread % <span class="sort-ind"></span></th>
+                <th data-sort="totalFeePct" class="px-3 py-2.5 text-right font-semibold" title="Buy fee / sell fee / total fee as % of buy price">Fees B / S / T <span class="sort-ind"></span></th>
+                <th data-sort="profit" class="px-3 py-2.5 text-right font-semibold" title="Profit per 1 unit of base asset, in quote currency">Profit / 1 unit <span class="sort-ind"></span></th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody" class="divide-y divide-slate-800/80"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="flex flex-col gap-2 border-t border-slate-800 px-4 py-3 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+        <div id="tableFooter">No scan yet.</div>
+        <div class="text-slate-600">Prices update only when a scan runs. Always verify depth, withdrawal limits and fees before trading.</div>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var $ = window.jQuery;
+      var ccxt = window.ccxt;
+
+      var MAX_ROWS = 400;
+
+      var FIAT = new Set(['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD', 'CNY', 'CNH', 'HKD', 'SGD', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'TRY', 'ZAR', 'MXN', 'BRL', 'ARS', 'CLP', 'COP', 'INR', 'KRW', 'RUB', 'UAH', 'ILS', 'AED', 'SAR', 'THB', 'IDR', 'MYR', 'PHP', 'VND', 'NGN', 'KES', 'GHS', 'EGP', 'PKR', 'BDT', 'LKR', 'TWD']);
+
+      var EXCHANGE_DEFS = [
+        { id: 'binance', name: 'Binance', defaultOn: true },
+        { id: 'kraken', name: 'Kraken', defaultOn: true },
+        { id: 'coinbase', name: 'Coinbase', defaultOn: false },
+        { id: 'bitstamp', name: 'Bitstamp', defaultOn: false },
+        { id: 'bitfinex', name: 'Bitfinex', defaultOn: false },
+        { id: 'kucoin', name: 'KuCoin', defaultOn: false },
+        { id: 'okx', name: 'OKX', defaultOn: true },
+        { id: 'bybit', name: 'Bybit', defaultOn: false },
+        { id: 'gateio', name: 'Gate', defaultOn: false },
+        { id: 'gate', name: 'Gate', defaultOn: false },
+        { id: 'mexc', name: 'MEXC', defaultOn: false },
+        { id: 'bitget', name: 'Bitget', defaultOn: true },
+        { id: 'htx', name: 'HTX', defaultOn: false },
+        { id: 'huobi', name: 'HTX', defaultOn: false },
+        { id: 'cryptocom', name: 'Crypto.com', defaultOn: false },
+        { id: 'backpack', name: 'Backpack', defaultOn: false },
+        { id: 'bitvavo', name: 'Bitvavo', defaultOn: true },
+        { id: 'gemini', name: 'Gemini', defaultOn: false }
+      ];
+
+      var EXCHANGE_BY_ID = {};
+
+      var state = {
+        records: [],
+        lastArbs: [],
+        lastScanAt: null,
+        scanning: false,
+        sortKey: 'spreadPct',
+        sortDir: 'desc',
+        exchangeStatus: {},
+        exchangeCache: {},
+        autoTimer: null
+      };
+
+      function esc(value) {
+        return String(value).replace(/[&<>"']/g, function (ch) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+        });
+      }
+
+      function clampNumber(value, min, max, fallback) {
+        var n = Number(value);
+        if (!isFinite(n)) return fallback;
+        if (n < min) return min;
+        if (n > max) return max;
+        return n;
+      }
+
+      function debounce(fn, wait) {
+        var timer = null;
+        return function () {
+          var args = arguments;
+          var ctx = this;
+          clearTimeout(timer);
+          timer = setTimeout(function () { fn.apply(ctx, args); }, wait);
+        };
+      }
+
+      function quoteOf(symbol) {
+        var parts = String(symbol).split('/');
+        if (parts.length < 2) return '';
+        return parts[1].split(':')[0];
+      }
+
+      function fmtNumber(value) {
+        if (value === null || value === undefined || !isFinite(value)) return '—';
+        var abs = Math.abs(value);
+        var digits;
+        if (abs === 0) digits = 2;
+        else if (abs >= 100) digits = 2;
+        else if (abs >= 1) digits = 4;
+        else if (abs >= 0.01) digits = 6;
+        else digits = 8;
+        return Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits });
+      }
+
+      function fmtCompact(value) {
+        var n = Number(value);
+        if (!isFinite(n) || n <= 0) return '—';
+        return n.toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+      }
+
+      function classBadge(cls) {
+        var map = {
+          crypto: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300',
+          forex: 'border-teal-500/30 bg-teal-500/10 text-teal-300',
+          stocks: 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+        };
+        var label = cls.charAt(0).toUpperCase() + cls.slice(1);
+        return '<span class="inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium ' + (map[cls] || 'border-slate-700 bg-slate-800 text-slate-300') + '">' + esc(label) + '</span>';
+      }
+
+      function readSettings() {
+        var classes = new Set();
+        $('input[name="assetClass"]:checked').each(function () { classes.add(this.value); });
+
+        var exchanges = new Set();
+        $('#exchangeList input[type="checkbox"]:checked').each(function () { exchanges.add(this.value); });
+
+        return {
+          classes: classes,
+          exchanges: exchanges,
+          minSpread: clampNumber($('#minSpread').val(), 0, 1000, 0),
+          maxSpread: clampNumber($('#maxSpread').val(), 0, 100000, 25),
+          fallbackFeePct: clampNumber($('#fallbackFee').val(), 0, 5, 0.1),
+          minVolume: clampNumber($('#minVolume').val(), 0, Number.MAX_SAFE_INTEGER, 0),
+          applyFees: $('#applyFees').is(':checked'),
+          search: String($('#search').val() || '').trim().toLowerCase()
+        };
+      }
+
+      function classify(exchange, market) {
+        if (market.stock === true || market.type === 'stock') return 'stocks';
+
+        var currencies = exchange.currencies || {};
+        var baseCode = String(market.base || '').toUpperCase();
+        var quoteCode = String(market.quote || '').toUpperCase();
+        var base = currencies[market.base] || {};
+        var quote = currencies[market.quote] || {};
+
+        if (base.type === 'stock' || quote.type === 'stock') return 'stocks';
+
+        var baseFiat = base.type === 'fiat' || FIAT.has(baseCode);
+        var quoteFiat = quote.type === 'fiat' || FIAT.has(quoteCode);
+
+        if (baseFiat && quoteFiat) return 'forex';
+        return 'crypto';
+      }
+
+      function marketTakerFee(exchange, market) {
+        var candidates = [
+          market.taker,
+          market.fee && market.fee.taker,
+          exchange.taker,
+          exchange.fees && exchange.fees.trading && exchange.fees.trading.taker,
+          exchange.fees && exchange.fees[market.symbol] && exchange.fees[market.symbol].taker,
+          exchange.options && exchange.options.taker
+        ];
+
+        for (var i = 0; i < candidates.length; i++) {
+          var value = candidates[i];
+          if (typeof value === 'number' && isFinite(value) && value >= 0 && value < 1) return value;
+        }
+
+        return null;
+      }
+
+      function describeError(error) {
+        var message = error && error.message ? error.message : String(error);
+        message = message.replace(/\s+/g, ' ').trim();
+
+        if (/failed to fetch|networkerror|load failed|network error|cors|fetch failed/i.test(message)) {
+          return 'Network or CORS blocked in browser';
+        }
+        if (/timeout|timed out/i.test(message)) return 'Request timed out';
+        if (/rate.?limit|too many requests|429/i.test(message)) return 'Rate limited by exchange';
+
+        return message.length > 140 ? message.slice(0, 140) + '…' : message;
+      }
+
+      function buildExchangeList() {
+        var $list = $('#exchangeList').empty();
+        var seenNames = new Set();
+
+        EXCHANGE_DEFS.forEach(function (def) {
+          if (typeof ccxt[def.id] !== 'function') return;
+          if (seenNames.has(def.name)) return;
+          seenNames.add(def.name);
+          EXCHANGE_BY_ID[def.id] = def;
+
+          var checked = def.defaultOn ? ' checked' : '';
+          var html = '' +
+            '<label class="cursor-pointer select-none">' +
+              '<input type="checkbox" value="' + esc(def.id) + '" class="peer sr-only"' + checked + '>' +
+              '<span class="inline-flex items-center rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-600 peer-checked:border-indigo-500/60 peer-checked:bg-indigo-500/10 peer-checked:text-indigo-300">' +
+                esc(def.name) +
+              '</span>' +
+            '</label>';
+
+          $list.append(html);
+        });
+
+        if (!Object.keys(EXCHANGE_BY_ID).length) {
+          fatal('No CCXT exchanges are available. Check the CCXT CDN script.');
+        }
+      }
+
+      function getSelectedExchanges() {
+        return $('#exchangeList input[type="checkbox"]:checked').map(function () { return this.value; }).get();
+      }
+
+      function updateExchangeCount() {
+        var total = $('#exchangeList input[type="checkbox"]').length;
+        var selected = $('#exchangeList input[type="checkbox"]:checked').length;
+        $('#exchangeCount').text(selected + '/' + total);
+      }
+
+      function renderStatuses() {
+        var selected = getSelectedExchanges();
+        var $wrap = $('#exchangeStatus');
+        updateExchangeCount();
+
+        if (!selected.length) {
+          $wrap.html('<div class="col-span-full rounded-lg border border-dashed border-slate-800 px-3 py-4 text-xs text-slate-500">Select at least one exchange to scan.</div>');
+          return;
+        }
+
+        var html = selected.map(function (id) {
+          var def = EXCHANGE_BY_ID[id] || { name: id };
+          var status = state.exchangeStatus[id] || { state: 'idle' };
+          var dotClass = 'bg-slate-600';
+          var borderClass = 'border-slate-800 bg-slate-900/40';
+          var label = 'Not scanned';
+          var labelClass = 'text-slate-500';
+
+          if (status.state === 'loading') {
+            dotClass = 'bg-indigo-400 animate-pulse';
+            borderClass = 'border-indigo-500/40 bg-indigo-500/5';
+            label = 'Loading markets…';
+            labelClass = 'text-indigo-300';
+          } else if (status.state === 'ok') {
+            dotClass = 'bg-emerald-400';
+            borderClass = 'border-emerald-500/25 bg-emerald-500/5';
+            label = status.pairs + ' quotes · ' + status.ms + 'ms';
+            labelClass = 'text-emerald-300/80';
+          } else if (status.state === 'error') {
+            dotClass = 'bg-rose-400';
+            borderClass = 'border-rose-500/30 bg-rose-500/5';
+            label = status.error || 'Failed';
+            labelClass = 'max-w-[9rem] truncate text-rose-300/90';
+          }
+
+          var title = status.error ? ' title="' + esc(status.error) + '"' : '';
+
+          return '' +
+            '<div class="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 ' + borderClass + '"' + title + '>' +
+              '<div class="flex min-w-0 items-center gap-2">' +
+                '<span class="h-1.5 w-1.5 shrink-0 rounded-full ' + dotClass + '"></span>' +
+                '<span class="truncate text-xs font-medium text-slate-300">' + esc(def.name) + '</span>' +
+              '</div>' +
+              '<span class="shrink-0 text-[11px] ' + labelClass + '">' + esc(label) + '</span>' +
+            '</div>';
+        });
+
+        $wrap.html(html.join(''));
+      }
+
+      function setExchangeStatus(id, status) {
+        state.exchangeStatus[id] = status;
+        renderStatuses();
+      }
+
+      function scanExchange(id) {
+        var def = EXCHANGE_BY_ID[id];
+        var started = performance.now();
+
+        return Promise.resolve()
+          .then(function () {
+            setExchangeStatus(id, { state: 'loading', pairs: 0, ms: 0 });
+            var exchange = state.exchangeCache[id];
+
+            if (!exchange) {
+              exchange = new ccxt[id]({ enableRateLimit: true, timeout: 15000 });
+              state.exchangeCache[id] = exchange;
+            }
+
+            var ready = exchange.markets && Object.keys(exchange.markets).length > 0;
+            var marketsPromise = ready ? Promise.resolve() : exchange.loadMarkets();
+
+            return marketsPromise.then(function () {
+              if (exchange.has && exchange.has.fetchTickers === false) {
+                throw new Error('fetchTickers is not supported by this exchange');
+              }
+
+              var meta = new Map();
+              Object.keys(exchange.markets).forEach(function (symbol) {
+                var market = exchange.markets[symbol];
+                if (!market || market.active === false) return;
+                var isSpot = market.spot === true || market.type === 'spot';
+                if (!isSpot || market.contract === true) return;
+                meta.set(symbol, { cls: classify(exchange, market), fee: marketTakerFee(exchange, market) });
+              });
+
+              if (!meta.size) return [];
+
+              return exchange.fetchTickers().then(function (tickers) {
+                var records = [];
+
+                Object.keys(tickers || {}).forEach(function (symbol) {
+                  var info = meta.get(symbol);
+                  if (!info) return;
+                  var ticker = tickers[symbol];
+                  if (!ticker) return;
+
+                  var bid = Number(ticker.bid);
+                  var ask = Number(ticker.ask);
+                  if (!isFinite(bid) || !isFinite(ask) || bid <= 0 || ask <= 0) return;
+
+                  var quoteVolume = Number(ticker.quoteVolume);
+                  if (!isFinite(quoteVolume)) quoteVolume = 0;
+                  if (!quoteVolume && ticker.baseVolume && ticker.last) {
+                    var baseVolume = Number(ticker.baseVolume);
+                    var last = Number(ticker.last);
+                    if (isFinite(baseVolume) && isFinite(last)) quoteVolume = baseVolume * last;
+                  }
+
+                  records.push({
+                    exchange: id,
+                    exchangeName: def.name,
+                    symbol: symbol,
+                    cls: info.cls,
+                    bid: bid,
+                    ask: ask,
+                    fee: info.fee,
+                    quoteVolume: quoteVolume
+                  });
+                });
+
+                return records;
+              });
+            }).then(function (records) {
+              setExchangeStatus(id, {
+                state: 'ok',
+                pairs: records.length,
+                ms: Math.round(performance.now() - started)
+              });
+              return records;
+            });
+          })
+          .catch(function (error) {
+            setExchangeStatus(id, {
+              state: 'error',
+              pairs: 0,
+              error: describeError(error),
+              ms: Math.round(performance.now() - started)
+            });
+            return [];
+          });
+      }
+
+      function mapPool(items, limit, worker) {
+        var results = new Array(items.length);
+        var index = 0;
+        var runners = [];
+        var count = Math.min(limit, items.length);
+
+        for (var i = 0; i < count; i++) {
+          runners.push((function run() {
+            var current = index++;
+            if (current >= items.length) return Promise.resolve();
+            return Promise.resolve(worker(items[current], current)).then(function (value) {
+              results[current] = value;
+              return run();
+            });
+          })());
+        }
+
+        return Promise.all(runners).then(function () { return results; });
+      }
+
+      function computeArbs(records, settings) {
+        var groups = new Map();
+
+        records.forEach(function (record) {
+          if (!settings.classes.has(record.cls)) return;
+          if (!settings.exchanges.has(record.exchange)) return;
+          if (settings.minVolume > 0 && record.quoteVolume > 0 && record.quoteVolume < settings.minVolume) return;
+
+          var list = groups.get(record.symbol);
+          if (!list) {
+            list = [];
+            groups.set(record.symbol, list);
+          }
+          list.push(record);
+        });
+
+        var results = [];
+
+        groups.forEach(function (list, symbol) {
+          if (list.length < 2) return;
+
+          var best = null;
+
+          for (var i = 0; i < list.length; i++) {
+            for (var j = 0; j < list.length; j++) {
+              if (i === j) continue;
+
+              var buy = list[i];
+              var sell = list[j];
+              var spreadPct = ((sell.bid - buy.ask) / buy.ask) * 100;
+              if (!isFinite(spreadPct)) continue;
+              if (settings.maxSpread > 0 && spreadPct > settings.maxSpread) continue;
+
+              var buyFee = buy.fee === null ? settings.fallbackFeePct / 100 : buy.fee;
+              var sellFee = sell.fee === null ? settings.fallbackFeePct / 100 : sell.fee;
+              var buyFeePct = buyFee * 100;
+              var sellFeePct = sellFee * 100;
+              var totalFeeQuote = buy.ask * buyFee + sell.bid * sellFee;
+              var totalFeePct = (totalFeeQuote / buy.ask) * 100;
+
+              var profit;
+              var profitPct;
+
+              if (settings.applyFees) {
+                var cost = buy.ask * (1 + buyFee);
+                var revenue = sell.bid * (1 - sellFee);
+                profit = revenue - cost;
+                profitPct = cost > 0 ? (profit / cost) * 100 : 0;
+              } else {
+                profit = sell.bid - buy.ask;
+                profitPct = spreadPct;
+              }
+
+              if (!best || spreadPct > best.spreadPct) {
+                best = {
+                  symbol: symbol,
+                  cls: buy.cls,
+                  buy: { exchange: buy.exchange, name: buy.exchangeName, price: buy.ask, fee: buyFee },
+                  sell: { exchange: sell.exchange, name: sell.exchangeName, price: sell.bid, fee: sellFee },
+                  spreadPct: spreadPct,
+                  buyFeePct: buyFeePct,
+                  sellFeePct: sellFeePct,
+                  totalFeeQuote: totalFeeQuote,
+                  totalFeePct: totalFeePct,
+                  profit: profit,
+                  profitPct: profitPct
+                };
+              }
+            }
+          }
+
+          if (best) results.push(best);
+        });
+
+        return results;
+      }
+
+      function sortRows(rows, key, direction) {
+        var multiplier = direction === 'asc' ? 1 : -1;
+
+        rows.sort(function (a, b) {
+          if (key === 'symbol') return a.symbol.localeCompare(b.symbol) * multiplier;
+          if (key === 'buy') return a.buy.name.localeCompare(b.buy.name) * multiplier;
+          if (key === 'sell') return a.sell.name.localeCompare(b.sell.name) * multiplier;
+
+          var va;
+          var vb;
+          if (key === 'buyPrice') {
+            va = a.buy.price;
+            vb = b.buy.price;
+          } else if (key === 'sellPrice') {
+            va = a.sell.price;
+            vb = b.sell.price;
+          } else {
+            va = Number(a[key]);
+            vb = Number(b[key]);
+          }
+
+          if (!isFinite(va)) va = 0;
+          if (!isFinite(vb)) vb = 0;
+          return (va - vb) * multiplier;
+        });
+      }
+
+      function renderSortIndicators() {
+        $('th[data-sort]').each(function () {
+          var key = $(this).data('sort');
+          var active = key === state.sortKey;
+          $(this).find('.sort-ind').text(active ? (state.sortDir === 'asc' ? '↑' : '↓') : '');
+        });
+      }
+
+      function rowHtml(result, index) {
+        var quote = quoteOf(result.symbol);
+        var spreadPositive = result.spreadPct >= 0;
+        var profitPositive = result.profit > 0;
+        var profitClass = profitPositive ? 'text-emerald-400' : (result.profit < 0 ? 'text-rose-400' : 'text-slate-400');
+        var topRowClass = index < 3 ? 'bg-emerald-500/[0.03]' : '';
+
+        return '' +
+          '<tr class="border-t border-slate-800/70 transition hover:bg-slate-800/40 ' + topRowClass + '">' +
+            '<td class="whitespace-nowrap px-3 py-2 font-mono text-slate-100">' + esc(result.symbol) + '</td>' +
+            '<td class="px-3 py-2">' + classBadge(result.cls) + '</td>' +
+            '<td class="whitespace-nowrap px-3 py-2 font-medium text-slate-300">' + esc(result.buy.name) + '</td>' +
+            '<td class="whitespace-nowrap px-3 py-2 text-right font-mono text-sky-300">' + fmtNumber(result.buy.price) + '</td>' +
+            '<td class="whitespace-nowrap px-3 py-2 font-medium text-slate-300">' + esc(result.sell.name) + '</td>' +
+            '<td class="whitespace-nowrap px-3 py-2 text-right font-mono text-fuchsia-300">' + fmtNumber(result.sell.price) + '</td>' +
+            '<td class="whitespace-nowrap px-3 py-2 text-right font-mono font-semibold ' + (spreadPositive ? 'text-emerald-400' : 'text-rose-400') + '">' +
+              (result.spreadPct > 0 ? '+' : '') + result.spreadPct.toFixed(2) + '%' +
+            '</td>' +
+            '<td class="whitespace-nowrap px-3 py-2 text-right font-mono text-[11px] text-slate-400" title="Buy ' + result.buyFeePct.toFixed(3) + '%, sell ' + result.sellFeePct.toFixed(3) + '%, total ' + fmtNumber(result.totalFeeQuote) + ' ' + esc(quote) + ' per unit">' +
+              result.buyFeePct.toFixed(2) + '% / ' + result.sellFeePct.toFixed(2) + '% / <span class="text-slate-200">' + result.totalFeePct.toFixed(2) + '%</span>' +
+              '<div class="text-[10px] text-slate-500">' + fmtNumber(result.totalFeeQuote) + ' ' + esc(quote) + '</div>' +
+            '</td>' +
+            '<td class="whitespace-nowrap px-3 py-2 text-right">' +
+              '<div class="font-mono font-semibold ' + profitClass + '">' + (result.profit > 0 ? '+' : '') + fmtNumber(result.profit) + ' <span class="text-[11px] font-normal text-slate-500">' + esc(quote) + '</span></div>' +
+              '<div class="text-[11px] ' + profitClass + ' opacity-80">' + (result.profitPct > 0 ? '+' : '') + result.profitPct.toFixed(2) + '%</div>' +
+            '</td>' +
+          '</tr>';
+      }
+
+      function render(settings, arbs) {
+        var rows = arbs.slice();
+
+        if (settings.minSpread > 0) {
+          rows = rows.filter(function (item) { return item.spreadPct >= settings.minSpread; });
+        }
+
+        if (settings.search) {
+          var query = settings.search;
+          rows = rows.filter(function (item) {
+            return item.symbol.toLowerCase().indexOf(query) !== -1 ||
+              item.buy.name.toLowerCase().indexOf(query) !== -1 ||
+              item.sell.name.toLowerCase().indexOf(query) !== -1 ||
+              item.cls.toLowerCase().indexOf(query) !== -1;
+          });
+        }
+
+        sortRows(rows, state.sortKey, state.sortDir);
+
+        var visible = rows.length;
+        var shown = rows.slice(0, MAX_ROWS);
+        var $body = $('#resultsBody');
+
+        if (!shown.length) {
+          var message;
+          if (state.scanning) {
+            message = 'Scanning exchanges…';
+          } else if (state.records.length) {
+            message = 'No opportunities match the current filters.';
+          } else if (state.lastScanAt) {
+            message = 'No quotes loaded. Check the connection status above.';
+          } else {
+            message = 'No data yet. Select exchanges and press "Scan markets".';
+          }
+          $body.html('<tr><td colspan="9" class="px-4 py-16 text-center text-sm text-slate-500">' + message + '</td></tr>');
+        } else {
+          $body.html(shown.map(rowHtml).join(''));
+        }
+
+        $('#statMatches').text(visible);
+        $('#statSymbols').text(arbs.length);
+        $('#statQuotes').text(state.records.length);
+        $('#statUpdated').text(state.scanning ? 'Scanning…' : (state.lastScanAt ? state.lastScanAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'));
+
+        var feeNote = settings.applyFees ? 'fees applied' : 'fees ignored';
+        var footer = visible + ' match' + (visible === 1 ? '' : 'es') + ' from ' + arbs.length + ' arbitrage symbol' + (arbs.length === 1 ? '' : 's');
+        if (visible > MAX_ROWS) footer += ' · showing top ' + MAX_ROWS;
+        footer += ' · ' + feeNote + ' · profit is per 1 unit of base in quote currency';
+        $('#tableFooter').text(footer);
+
+        renderSortIndicators();
+      }
+
+      function rebuild() {
+        var settings = readSettings();
+        var arbs = computeArbs(state.records, settings);
+        state.lastArbs = arbs;
+        render(settings, arbs);
+      }
+
+      function fatal(message) {
+        $('#fatal').removeClass('hidden').text(message);
+        $('#scanBtn').prop('disabled', true);
+      }
+
+      function scan() {
+        if (state.scanning) return;
+
+        var selected = getSelectedExchanges();
+        if (!selected.length) {
+          $('#fatal').removeClass('hidden').text('Select at least one exchange before scanning.');
+          return;
+        }
+
+        $('#fatal').addClass('hidden');
+        state.scanning = true;
+        $('#scanBtn').prop('disabled', true);
+        $('#scanBtnSpinner').removeClass('hidden');
+        $('#scanBtnLabel').text('Scanning…');
+
+        state.exchangeStatus = {};
+        selected.forEach(function (id) {
+          state.exchangeStatus[id] = { state: 'loading', pairs: 0, ms: 0 };
+        });
+        renderStatuses();
+        render(readSettings(), state.lastArbs);
+
+        mapPool(selected, 3, function (id) { return scanExchange(id); })
+          .then(function (groups) {
+            var records = [];
+            groups.forEach(function (group) {
+              records = records.concat(group || []);
+            });
+
+            state.records = records;
+            state.lastScanAt = new Date();
+            state.scanning = false;
+            rebuild();
+          })
+          .catch(function (error) {
+            state.scanning = false;
+            $('#fatal').removeClass('hidden').text('Scan failed: ' + describeError(error));
+          })
+          .then(function () {
+            state.scanning = false;
+            $('#scanBtn').prop('disabled', false);
+            $('#scanBtnSpinner').addClass('hidden');
+            $('#scanBtnLabel').text('Scan markets');
+            renderStatuses();
+          });
+      }
+
+      function bindEvents() {
+        $('#scanBtn').on('click', function () { scan(); });
+
+        var refreshView = debounce(function () {
+          rebuild();
+          renderStatuses();
+        }, 100);
+
+        $('#controls').on('input change', 'input, select', refreshView);
+
+        $('#selectAllExchanges').on('click', function () {
+          $('#exchangeList input[type="checkbox"]').prop('checked', true);
+          refreshView();
+        });
+
+        $('#selectNoExchanges').on('click', function () {
+          $('#exchangeList input[type="checkbox"]').prop('checked', false);
+          refreshView();
+        });
+
+        $('thead').on('click', 'th[data-sort]', function () {
+          var key = $(this).data('sort');
+          if (state.sortKey === key) {
+            state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            state.sortKey = key;
+            state.sortDir = (key === 'symbol' || key === 'buy' || key === 'sell') ? 'asc' : 'desc';
+          }
+          render(readSettings(), state.lastArbs);
+        });
+
+        $('#autoRefresh').on('change', function () {
+          var seconds = parseInt(this.value, 10) || 0;
+          if (state.autoTimer) {
+            clearInterval(state.autoTimer);
+            state.autoTimer = null;
+          }
+          if (seconds > 0) {
+            state.autoTimer = setInterval(function () { scan(); }, seconds * 1000);
+          }
+        });
+      }
+
+      $(function () {
+        if (!window.jQuery) {
+          document.body.insertAdjacentHTML('afterbegin', '<div class="m-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">jQuery failed to load.</div>');
+          return;
+        }
+
+        if (!ccxt) {
+          fatal('CCXT failed to load from the CDN. Check your network connection and reload the page.');
+          return;
+        }
+
+        buildExchangeList();
+        bindEvents();
+        renderStatuses();
+        render(readSettings(), []);
+        scan();
+      });
+    })();
+  </script>
+</body>
+</html>
+
